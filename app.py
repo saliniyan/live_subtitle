@@ -10,6 +10,7 @@ CORS(app)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Vosk ASR model
 asr_model_path = "/home/saliniyan/Documents/git_project/python/vosk-model-small-en-us-0.15"
 asr_model = Model(asr_model_path)
 
@@ -17,6 +18,9 @@ asr_model = Model(asr_model_path)
 AZURE_TRANSLATOR_KEY = env.AZURE_TRANSLATOR_KEY
 AZURE_TRANSLATOR_REGION = env.AZURE_TRANSLATOR_REGION
 AZURE_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
+
+# Colab-hosted local model API
+LOCAL_MODEL_API = "https://new-ape-6.loca.lt/translate"  # replace with actual ngrok URL
 
 
 def azure_translate(text, to_lang="ta", from_lang="en"):
@@ -35,7 +39,19 @@ def azure_translate(text, to_lang="ta", from_lang="en"):
         response.raise_for_status()
         return response.json()[0]["translations"][0]["text"]
     except:
-        return "[Translation failed]"
+        return "[Azure Translation failed]"
+
+
+def local_translate_api(text: str) -> str:
+    """Call Colab-hosted local model API."""
+    try:
+        response = requests.post(LOCAL_MODEL_API, json={"text": text})
+        response.raise_for_status()
+        return response.json().get("predicted", "[Local model failed]")
+    except Exception as e:
+        print("Error calling local model API:", e)
+        return "[Local model failed]"
+
 
 def extract_audio(video_path, audio_path):
     cmd = ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path]
@@ -77,10 +93,10 @@ def stream_video():
                     chunk_end = word["end"]
                     buffer_chunk += word["word"] + " "
 
-                    # Flush every 5 words
-                    if len(buffer_chunk.split()) >= 5:
-                        tamil_text = azure_translate(buffer_chunk.strip())
-                        yield f"data: {json.dumps({'tamil_text': tamil_text, 'start': chunk_start, 'end': chunk_end})}\n\n"
+                    if len(buffer_chunk.split()) >= 5:  # Flush every 5 words
+                        azure_text = azure_translate(buffer_chunk.strip())
+                        local_text = local_translate_api(buffer_chunk.strip())
+                        yield f"data: {json.dumps({'azure_text': azure_text, 'local_text': local_text, 'start': chunk_start, 'end': chunk_end})}\n\n"
                         buffer_chunk = ""
                         chunk_start = None
                         chunk_end = None
@@ -93,10 +109,12 @@ def stream_video():
             chunk_end = word["end"]
             buffer_chunk += word["word"] + " "
         if buffer_chunk.strip():
-            tamil_text = azure_translate(buffer_chunk.strip())
-            yield f"data: {json.dumps({'tamil_text': tamil_text, 'start': chunk_start, 'end': chunk_end})}\n\n"
+            azure_text = azure_translate(buffer_chunk.strip())
+            local_text = local_translate_api(buffer_chunk.strip())
+            yield f"data: {json.dumps({'azure_text': azure_text, 'local_text': local_text, 'start': chunk_start, 'end': chunk_end})}\n\n"
 
     return Response(generate(), mimetype="text/event-stream")
+
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)
