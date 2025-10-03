@@ -6,24 +6,77 @@ export default function VideoSubtitle() {
   const [activeSubtitles, setActiveSubtitles] = useState([]);
   const [videoFile, setVideoFile] = useState(null);
   const [fileName, setFileName] = useState("");
+  const [youtubeLink, setYoutubeLink] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [statusText, setStatusText] = useState(""); // Temporary message
   const abortControllerRef = useRef(null);
 
+  // --- Handle YouTube Download ---
+  const handleYoutubeDownload = async () => {
+    if (!youtubeLink) return;
+
+    setDownloading(true);
+    setStatusText("Estimating download...");
+
+    try {
+      const response = await fetch("http://localhost:5000/download_youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: youtubeLink }),
+      });
+
+      const data = await response.json();
+      if (data.error) {
+        setStatusText("Download failed: " + data.error);
+        setDownloading(false);
+        return;
+      }
+
+      setStatusText("Downloading video...");
+
+      // Fetch the downloaded video as a File object
+      const fileResponse = await fetch(`http://localhost:5000${data.file_url}`);
+      const blob = await fileResponse.blob();
+      const file = new File([blob], data.title + ".mp4", { type: "video/mp4" });
+
+      setVideoFile(file);
+      setFileName(file.name);
+
+      if (videoRef.current) {
+        videoRef.current.src = URL.createObjectURL(file);
+      }
+
+      // Show a temporary message
+      setStatusText(`Downloaded "${data.title}"`);
+      setTimeout(() => setStatusText(""), 4000); // Clear after 4 seconds
+    } catch (err) {
+      console.error("YouTube download failed:", err);
+      setStatusText("YouTube download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // --- Handle Local File Upload ---
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setVideoFile(file);
     setFileName(file ? file.name : "");
   };
 
+  // --- Fullscreen ---
+  const goFullscreen = () => {
+    const wrapper = videoRef.current.parentElement;
+    if (wrapper.requestFullscreen) wrapper.requestFullscreen();
+    else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+    else if (wrapper.msRequestFullscreen) wrapper.msRequestFullscreen();
+  };
+
+  // --- Upload + Stream Subtitles ---
   const uploadVideo = async () => {
-    if (!videoFile) {
-      alert("Select a video");
-      return;
-    }
+    if (!videoFile) return;
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     setActiveSubtitles([]);
 
     if (videoRef.current) {
@@ -36,7 +89,7 @@ export default function VideoSubtitle() {
 
     const videoURL = URL.createObjectURL(videoFile);
     videoRef.current.src = videoURL;
-    
+
     let videoStarted = false;
     abortControllerRef.current = new AbortController();
 
@@ -44,7 +97,7 @@ export default function VideoSubtitle() {
       const response = await fetch("http://localhost:5000/stream_video", {
         method: "POST",
         body: formData,
-        signal: abortControllerRef.current.signal
+        signal: abortControllerRef.current.signal,
       });
 
       const reader = response.body.getReader();
@@ -61,21 +114,22 @@ export default function VideoSubtitle() {
         for (let i = 0; i < events.length - 1; i++) {
           if (events[i].startsWith("data: ")) {
             const jsonData = JSON.parse(events[i].substring(6));
-            
+
             setActiveSubtitles((prev) => [
               ...prev,
               {
-                text: jsonData.tamil_text,
+                azureText: jsonData.azure_text,
+                localText: jsonData.local_text,
                 start: jsonData.start,
                 end: jsonData.end,
-              }
+              },
             ]);
 
             if (!videoStarted) {
               videoStarted = true;
               setTimeout(() => {
                 if (videoRef.current && !videoRef.current.paused) return;
-                videoRef.current.play().catch(err => console.log("Play failed:", err));
+                videoRef.current.play().catch((err) => console.log("Play failed:", err));
               }, 2000);
             }
           }
@@ -84,14 +138,11 @@ export default function VideoSubtitle() {
         buffer = events[events.length - 1];
       }
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log("Previous upload aborted");
-      } else {
-        console.error("Error streaming subtitles:", err);
-      }
+      if (err.name !== "AbortError") console.error("Error streaming subtitles:", err);
     }
   };
 
+  // --- Update subtitles in real-time ---
   useEffect(() => {
     const interval = setInterval(() => {
       if (!videoRef.current) return;
@@ -99,7 +150,7 @@ export default function VideoSubtitle() {
 
       const visible = activeSubtitles
         .filter((s) => currentTime >= s.start && currentTime <= s.end)
-        .map((s) => s.text)
+        .map((s) => `Azure: ${s.azureText}\nLocal: ${s.localText}`)
         .join("\n");
 
       const subtitleEl = document.getElementById("subtitle");
@@ -113,14 +164,30 @@ export default function VideoSubtitle() {
     <div className="video-subtitle-container">
       <div className="header">
         <h1>Real-Time Tamil Subtitles</h1>
-        <p>Upload your video and get live subtitles instantly</p>
+        <p>Upload a video or download from YouTube to get live subtitles</p>
       </div>
 
+      {/* YouTube Section */}
+      <div className="youtube-section">
+        <input
+          type="text"
+          placeholder="Paste YouTube link here"
+          value={youtubeLink}
+          onChange={(e) => setYoutubeLink(e.target.value)}
+          disabled={downloading}
+        />
+        <button onClick={handleYoutubeDownload} disabled={!youtubeLink || downloading}>
+          {downloading ? "Downloading..." : "Download from YouTube"}
+        </button>
+        {statusText && <div className="download-info">{statusText}</div>}
+      </div>
+
+      {/* Local Upload Section */}
       <div className="upload-section">
         <div className="file-input-wrapper">
-          <input 
-            type="file" 
-            accept="video/*" 
+          <input
+            type="file"
+            accept="video/*"
             onChange={handleFileChange}
             id="video-upload"
           />
@@ -128,21 +195,16 @@ export default function VideoSubtitle() {
             {fileName || "Choose Video"}
           </label>
         </div>
-        <button 
-          className="upload-button" 
-          onClick={uploadVideo}
-          disabled={!videoFile}
-        >
+        <button className="upload-button" onClick={uploadVideo} disabled={!videoFile}>
           Upload & Play
+        </button>
+        <button className="upload-button" onClick={goFullscreen} disabled={!videoFile}>
+          Fullscreen
         </button>
       </div>
 
       <div className="video-wrapper">
-        <video
-          ref={videoRef}
-          controls
-          className="video-player"
-        />
+        <video ref={videoRef} controls controlsList="nofullscreen" className="video-player" />
         <div id="subtitle" className="subtitle-display"></div>
       </div>
     </div>

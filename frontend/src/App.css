@@ -1,3 +1,4 @@
+/* Reset & Base */
 * {
   margin: 0;
   padding: 0;
@@ -9,43 +10,110 @@ body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
+/* Container */
 .video-subtitle-container {
-  max-width: 900px;
+  width: 100%;
+  max-width: 960px;
   margin: 40px auto;
-  background: white;
-  border-radius: 12px;
-  padding: 40px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 40px 30px;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
 }
 
+/* Header */
 .header {
   text-align: center;
-  margin-bottom: 30px;
 }
 
 .header h1 {
+  font-size: 34px;
+  font-weight: 700;
   color: #2c3e50;
-  font-size: 32px;
-  font-weight: 600;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .header p {
-  color: #7f8c8d;
   font-size: 16px;
+  color: #7f8c8d;
 }
 
+/* YouTube Section */
+.youtube-section {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.youtube-section input {
+  flex: 1 1 300px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 2px solid #ccc;
+  background-color: #fff;
+  color: #2c3e50;
+  font-size: 15px;
+  font-weight: 500;
+  outline: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.youtube-section input::placeholder {
+  color: #999;
+  font-weight: 400;
+}
+
+.youtube-section input:focus {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+  background-color: #fdfdfd;
+  transform: translateY(-1px);
+}
+
+
+.youtube-section button {
+  padding: 12px 28px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.youtube-section button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.youtube-section button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Upload Section */
 .upload-section {
   display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 15px;
-  margin-bottom: 30px;
-  padding: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
   background: #f8f9fa;
-  border-radius: 8px;
+  padding: 20px;
+  border-radius: 10px;
 }
 
 .file-input-wrapper {
@@ -62,13 +130,13 @@ body {
 .file-input-label {
   display: inline-block;
   padding: 12px 24px;
-  background: white;
+  background: #fff;
   color: #495057;
   border: 2px solid #dee2e6;
-  border-radius: 6px;
-  cursor: pointer;
+  border-radius: 8px;
   font-size: 15px;
   font-weight: 500;
+  cursor: pointer;
   transition: all 0.3s ease;
 }
 
@@ -82,12 +150,12 @@ body {
 .upload-button {
   padding: 12px 32px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  color: #fff;
   border: none;
-  border-radius: 6px;
-  cursor: pointer;
+  border-radius: 8px;
   font-size: 15px;
   font-weight: 600;
+  cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
@@ -97,22 +165,19 @@ body {
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
-.upload-button:active {
-  transform: translateY(0);
-}
-
 .upload-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  transform: none;
+  box-shadow: none;
 }
 
+/* Video Player */
 .video-wrapper {
   position: relative;
   background: #000;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.3);
 }
 
 .video-player {
@@ -121,6 +186,7 @@ body {
   background: #000;
 }
 
+/* Subtitles */
 .subtitle-display {
   position: absolute;
   bottom: 60px;
@@ -131,8 +197,7 @@ body {
   font-size: 28px;
   color: #ffffff;
   font-weight: 700;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9),
-               -1px -1px 2px rgba(0, 0, 0, 0.9);
+  text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.9);
   line-height: 1.4;
   white-space: pre-line;
   min-height: 50px;
@@ -142,7 +207,7 @@ body {
   display: none;
 }
 
-/* Loading state */
+/* Loading dots */
 .loading {
   text-align: center;
   padding: 20px;
@@ -170,19 +235,18 @@ body {
   }
 
   .header h1 {
-    font-size: 24px;
+    font-size: 26px;
   }
 
+  .youtube-section,
   .upload-section {
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
 
   .subtitle-display {
-    font-size: 20px;
+    font-size: 22px;
     bottom: 50px;
-    width: 95%;
-    padding: 8px 12px;
   }
 }
 
