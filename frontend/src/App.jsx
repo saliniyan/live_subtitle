@@ -64,15 +64,14 @@ export default function VideoSubtitle() {
     setFileName(file ? file.name : "");
   };
 
-  // --- Fullscreen ---
   const goFullscreen = () => {
-    const wrapper = videoRef.current.parentElement;
-    if (wrapper.requestFullscreen) wrapper.requestFullscreen();
-    else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
-    else if (wrapper.msRequestFullscreen) wrapper.msRequestFullscreen();
-  };
+  const wrapper = videoRef.current.parentElement;
+  if (wrapper.requestFullscreen) wrapper.requestFullscreen();
+  else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+  else if (wrapper.msRequestFullscreen) wrapper.msRequestFullscreen();
+};
 
-  // --- Upload + Stream Subtitles ---
+
   const uploadVideo = async () => {
     if (!videoFile) return;
 
@@ -129,7 +128,9 @@ export default function VideoSubtitle() {
               videoStarted = true;
               setTimeout(() => {
                 if (videoRef.current && !videoRef.current.paused) return;
-                videoRef.current.play().catch((err) => console.log("Play failed:", err));
+                videoRef.current
+                  .play()
+                  .catch((err) => console.log("Play failed:", err));
               }, 2000);
             }
           }
@@ -138,7 +139,11 @@ export default function VideoSubtitle() {
         buffer = events[events.length - 1];
       }
     } catch (err) {
-      if (err.name !== "AbortError") console.error("Error streaming subtitles:", err);
+      if (err.name === "AbortError") {
+        console.log("Previous upload aborted");
+      } else {
+        console.error("Error streaming subtitles:", err);
+      }
     }
   };
 
@@ -147,9 +152,9 @@ export default function VideoSubtitle() {
     if (!videoRef.current) return;
     const currentTime = videoRef.current.currentTime;
 
-    const visible = activeSubtitles
+      const visible = activeSubtitles
       .filter((s) => currentTime >= s.start && currentTime <= s.end)
-      .map((s) => s.azureText || s.localText) // Show only the best
+      .map((s) => `Azure: ${s.azureText}\nLocal: ${s.localText}`)
       .join("\n");
 
     const subtitleEl = document.getElementById("subtitle");
@@ -195,10 +200,18 @@ export default function VideoSubtitle() {
             {fileName || "Choose Video"}
           </label>
         </div>
-        <button className="upload-button" onClick={uploadVideo} disabled={!videoFile}>
+        <button
+          className="upload-button"
+          onClick={uploadVideo}
+          disabled={!videoFile}
+        >
           Upload & Play
         </button>
-        <button className="upload-button" onClick={goFullscreen} disabled={!videoFile}>
+        <button
+          className="upload-button"
+          onClick={goFullscreen}
+          disabled={!videoFile}
+        >
           Fullscreen
         </button>
       </div>

@@ -24,8 +24,8 @@ AZURE_TRANSLATOR_KEY = env.AZURE_TRANSLATOR_KEY
 AZURE_TRANSLATOR_REGION = env.AZURE_TRANSLATOR_REGION
 AZURE_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
 
-# Colab-hosted local model API (via ngrok/loca.lt tunnel)
-LOCAL_MODEL_API = "https://odd-penguin-74.loca.lt/translate"  # replace with actual Colab/ngrok URL
+# Colab-hosted local model API
+LOCAL_MODEL_API = "https://new-ape-6.loca.lt/translate"  # replace with actual ngrok URL
 
 
 def azure_translate(text, to_lang="ta", from_lang="en"):
@@ -43,13 +43,12 @@ def azure_translate(text, to_lang="ta", from_lang="en"):
         response = requests.post(url, params=params, headers=headers, json=body)
         response.raise_for_status()
         return response.json()[0]["translations"][0]["text"]
-    except Exception as e:
-        print("Azure Translate error:", e)
+    except:
         return "[Azure Translation failed]"
 
 
 def local_translate_api(text: str) -> str:
-    """Call Colab-hosted local model API for translation"""
+    """Call Colab-hosted local model API."""
     try:
         response = requests.post(LOCAL_MODEL_API, json={"text": text})
         response.raise_for_status()
@@ -154,7 +153,7 @@ def stream_video():
                     chunk_end = word["end"]
                     buffer_chunk += word["word"] + " "
 
-                    if len(buffer_chunk.split()) >= 5:
+                    if len(buffer_chunk.split()) >= 5:  # Flush every 5 words
                         azure_text = azure_translate(buffer_chunk.strip())
                         local_text = local_translate_api(buffer_chunk.strip())
                         yield f"data: {json.dumps({'azure_text': azure_text, 'local_text': local_text, 'start': chunk_start, 'end': chunk_end})}\n\n"

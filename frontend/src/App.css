@@ -9,6 +9,9 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 20px;
   display: flex;
   justify-content: center;
@@ -17,16 +20,12 @@ body {
 
 /* Container */
 .video-subtitle-container {
+  max-width: 900px;
   width: 100%;
-  max-width: 960px;
-  margin: 40px auto;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 40px 30px;
-  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 }
 
 /* Header */
@@ -207,24 +206,24 @@ body {
   display: none;
 }
 
-/* Loading dots */
-.loading {
-  text-align: center;
-  padding: 20px;
-  color: #667eea;
-  font-size: 16px;
-  font-weight: 500;
+/* Fullscreen subtitle fix */
+.video-wrapper:fullscreen {
+  width: 100%;
+  height: 100%;
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.loading::after {
-  content: '...';
-  animation: dots 1.5s steps(4, end) infinite;
+.video-wrapper:fullscreen .video-player {
+  width: 100%;
+  height: auto;
 }
 
-@keyframes dots {
-  0%, 20% { content: '.'; }
-  40% { content: '..'; }
-  60%, 100% { content: '...'; }
+.video-wrapper:fullscreen .subtitle-display {
+  font-size: 32px;
+  bottom: 80px;
 }
 
 /* Responsive */
