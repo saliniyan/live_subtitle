@@ -142,23 +142,23 @@ export default function VideoSubtitle() {
     }
   };
 
-  // --- Update subtitles in real-time ---
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!videoRef.current) return;
-      const currentTime = videoRef.current.currentTime;
+ useEffect(() => {
+  const interval = setInterval(() => {
+    if (!videoRef.current) return;
+    const currentTime = videoRef.current.currentTime;
 
-      const visible = activeSubtitles
-        .filter((s) => currentTime >= s.start && currentTime <= s.end)
-        .map((s) => `Azure: ${s.azureText}\nLocal: ${s.localText}`)
-        .join("\n");
+    const visible = activeSubtitles
+      .filter((s) => currentTime >= s.start && currentTime <= s.end)
+      .map((s) => s.azureText || s.localText) // Show only the best
+      .join("\n");
 
-      const subtitleEl = document.getElementById("subtitle");
-      if (subtitleEl) subtitleEl.innerText = visible;
-    }, 100);
+    const subtitleEl = document.getElementById("subtitle");
+    if (subtitleEl) subtitleEl.innerText = visible;
+  }, 100);
 
-    return () => clearInterval(interval);
-  }, [activeSubtitles]);
+  return () => clearInterval(interval);
+}, [activeSubtitles]);
+
 
   return (
     <div className="video-subtitle-container">
