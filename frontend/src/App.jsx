@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import "./App.css";
 
 export default function VideoSubtitle() {
   const videoRef = useRef();
   const [videoFile, setVideoFile] = useState(null);
   const [fileName, setFileName] = useState("");
+  const [youtubeLink, setYoutubeLink] = useState("");
+  const [downloading, setDownloading] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [liveSubtitles, setLiveSubtitles] = useState([]);
   const [statusText, setStatusText] = useState("");
@@ -21,10 +22,73 @@ export default function VideoSubtitle() {
   const isSeekingRef = useRef(false);
   const initialBufferCountRef = useRef(0);
 
+  // --- Handle YouTube Download ---
+  const handleYoutubeDownload = async () => {
+    if (!youtubeLink.trim()) {
+      alert("Please enter a YouTube URL");
+      return;
+    }
+
+    setDownloading(true);
+    setStatusText("Downloading from YouTube...");
+
+    try {
+      const response = await fetch("http://localhost:5000/download_youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: youtubeLink }),
+      });
+
+      const data = await response.json();
+      if (data.error) {
+        setStatusText("Download failed: " + data.error);
+        setDownloading(false);
+        return;
+      }
+
+      setStatusText("Video downloaded! Preparing...");
+
+      // Fetch the downloaded video as a File object
+      const fileResponse = await fetch(`http://localhost:5000${data.file_url}`);
+      const blob = await fileResponse.blob();
+      const file = new File([blob], data.title + ".mp4", { type: "video/mp4" });
+
+      setVideoFile(file);
+      setFileName(data.title + ".mp4");
+
+      // Clear previous state
+      setLiveSubtitles([]);
+      setIsPlaying(false);
+      setInitialBufferReady(false);
+      
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      allSubtitlesRef.current = [];
+      lastPlayedIndexRef.current = -1;
+      isSeekingRef.current = false;
+      initialBufferCountRef.current = 0;
+
+      setStatusText(`Successfully downloaded: ${data.title}`);
+      
+      setTimeout(() => {
+        setStatusText("");
+      }, 4000);
+    } catch (err) {
+      console.error("YouTube download failed:", err);
+      setStatusText("YouTube download failed: " + err.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
+    if (!file) return;
+    
     setVideoFile(file);
-    setFileName(file?.name || "");
+    setFileName(file.name);
     setLiveSubtitles([]);
     setIsPlaying(false);
     setInitialBufferReady(false);
@@ -40,75 +104,43 @@ export default function VideoSubtitle() {
     initialBufferCountRef.current = 0;
   };
 
-  // Play audio for subtitle - simplified version
+  // Play audio for subtitle
   const playAudioForSubtitle = useCallback((subtitle) => {
-    if (!subtitle || !subtitle.tts_url) {
-      console.log("No subtitle or TTS URL");
-      return;
-    }
+    if (!subtitle || !subtitle.tts_url) return;
+    if (lastPlayedIndexRef.current === subtitle.index) return;
 
-    // Don't replay the same subtitle
-    if (lastPlayedIndexRef.current === subtitle.index) {
-      return;
-    }
-
-    // Stop current audio if playing
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       currentAudioRef.current = null;
     }
 
     const audioUrl = `http://localhost:5000${subtitle.tts_url}`;
-    console.log("Attempting to play audio:", audioUrl, "for text:", subtitle.text);
     setAudioDebug(`Playing: ${subtitle.text}`);
 
     try {
       const audio = new Audio(audioUrl);
       audio.playbackRate = 1.1;
-      
       currentAudioRef.current = audio;
       lastPlayedIndexRef.current = subtitle.index;
       
-      audio.addEventListener('loadeddata', () => {
-        console.log("Audio loaded successfully");
-      });
-
-      audio.addEventListener('canplaythrough', () => {
-        console.log("Audio can play through");
-      });
-      
       audio.addEventListener('ended', () => {
-        console.log("Audio ended");
         currentAudioRef.current = null;
         setAudioDebug("Audio finished");
       });
       
       audio.addEventListener('error', (e) => {
-        console.error("Audio error:", e, audio.error);
         setAudioDebug(`Error: ${audio.error?.message || 'Unknown error'}`);
         currentAudioRef.current = null;
       });
       
-      // Try to play
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            console.log("Audio playing successfully");
-            setAudioDebug(`Playing: ${subtitle.text}`);
-          })
-          .catch((error) => {
-            console.error("Play failed:", error);
-            setAudioDebug(`Play failed: ${error.message}`);
-          });
-      }
+      audio.play().catch((error) => {
+        setAudioDebug(`Play failed: ${error.message}`);
+      });
     } catch (error) {
-      console.error("Error creating audio:", error);
       setAudioDebug(`Error: ${error.message}`);
     }
   }, []);
 
-  // Stop all audio
   const stopAllAudio = useCallback(() => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -132,18 +164,14 @@ export default function VideoSubtitle() {
       });
       const data = await resp.json();
       setSessionId(data.session_id);
-      console.log("Session started:", data.session_id);
 
-      // Set up video with muted original audio
       if (videoRef.current) {
         videoRef.current.src = `http://localhost:5000${data.video_url}`;
         videoRef.current.muted = true;
         videoRef.current.load();
       }
 
-      // Start TTS streaming
       setupTTSStream(data.session_id);
-
     } catch (error) {
       console.error("Error starting processing:", error);
       setStatusText("Error starting processing");
@@ -164,25 +192,18 @@ export default function VideoSubtitle() {
         setStatusText("Translation complete! Ready to play.");
         es.close();
         setProcessing(false);
-        
-        // Fetch all session data for complete timeline
         fetchSessionData(sessionId);
         return;
       }
 
-      console.log("Received TTS chunk:", data);
-      
-      // Count initial buffer chunks
       initialBufferCountRef.current++;
       
-      // Update status based on buffer progress
       if (initialBufferCountRef.current < 3) {
         setStatusText(`Buffering... ${initialBufferCountRef.current}/3 chunks ready`);
       } else if (initialBufferCountRef.current === 3) {
         setStatusText("Initial buffer ready! Press Play to start.");
         setInitialBufferReady(true);
         
-        // Auto-play video after buffer is ready
         if (videoRef.current) {
           setTimeout(() => {
             videoRef.current.play().catch(e => console.log("Auto-play prevented:", e));
@@ -192,10 +213,7 @@ export default function VideoSubtitle() {
         setStatusText("Processing translation...");
       }
       
-      // Add to all subtitles reference
       allSubtitlesRef.current = [...allSubtitlesRef.current, data];
-      
-      // Add to display subtitles
       setLiveSubtitles(prev => [...prev, data]);
     };
 
@@ -205,80 +223,57 @@ export default function VideoSubtitle() {
     };
   };
 
-  // Fetch all session data for complete timeline
   const fetchSessionData = async (sessionId) => {
     try {
       const response = await fetch(`http://localhost:5000/get_session_data/${sessionId}`);
       const data = await response.json();
       allSubtitlesRef.current = data.subtitles;
-      console.log("Loaded all subtitles:", allSubtitlesRef.current.length);
     } catch (error) {
       console.error("Error fetching session data:", error);
     }
   };
 
-  // Main sync function - handles both subtitle display and audio
   const syncWithVideo = useCallback(() => {
     if (!videoRef.current || allSubtitlesRef.current.length === 0) return;
     
     const currentTime = videoRef.current.currentTime;
-    
-    // Find current subtitle based on timeline
     const currentSubtitle = allSubtitlesRef.current.find(sub => 
       currentTime >= sub.start && currentTime <= sub.end
     );
     
-    // Update displayed subtitle
     const subEl = document.getElementById("subtitle");
     if (subEl) {
       if (currentSubtitle) {
         subEl.innerText = currentSubtitle.text;
-        
-        // Play audio if video is playing and not seeking
         if (isPlaying && !isSeekingRef.current && initialBufferReady) {
           playAudioForSubtitle(currentSubtitle);
         }
       } else {
-        // Find the nearest subtitle
-        const nearestSubtitle = allSubtitlesRef.current
-          .sort((a, b) => Math.abs(a.start - currentTime) - Math.abs(b.start - currentTime))[0];
-        
-        if (nearestSubtitle && Math.abs(nearestSubtitle.start - currentTime) < 2) {
-          subEl.innerText = nearestSubtitle.text;
-        } else {
-          subEl.innerText = "";
-        }
+        subEl.innerText = "";
       }
     }
   }, [isPlaying, initialBufferReady, playAudioForSubtitle]);
 
-  // Handle video seeking
   const handleSeeking = useCallback(() => {
-    console.log("Seeking - stopping audio");
     isSeekingRef.current = true;
     stopAllAudio();
     lastPlayedIndexRef.current = -1;
   }, [stopAllAudio]);
 
   const handleSeeked = useCallback(() => {
-    console.log("Seeked - ready to play");
     isSeekingRef.current = false;
     lastPlayedIndexRef.current = -1;
   }, []);
 
-  // Handle play event
   const handleVideoPlay = useCallback(() => {
-    console.log("Video play event - starting audio sync");
     setIsPlaying(true);
   }, []);
 
   const handleVideoPause = useCallback(() => {
-    console.log("Video pause event - stopping audio");
     setIsPlaying(false);
     stopAllAudio();
   }, [stopAllAudio]);
 
-  // Set up video event listeners and sync interval
   useEffect(() => {
     const videoElement = videoRef.current;
     if (!videoElement) return;
@@ -288,7 +283,6 @@ export default function VideoSubtitle() {
     videoElement.addEventListener('seeking', handleSeeking);
     videoElement.addEventListener('seeked', handleSeeked);
 
-    // Sync both subtitle and audio with video timeline every 300ms
     const syncInterval = setInterval(syncWithVideo, 300);
 
     return () => {
@@ -301,9 +295,9 @@ export default function VideoSubtitle() {
   }, [handleVideoPlay, handleVideoPause, handleSeeking, handleSeeked, syncWithVideo]);
 
   const goFullscreen = () => {
-    const wrapper = videoRef.current.parentElement;
-    if (wrapper.requestFullscreen) wrapper.requestFullscreen();
-    else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+    const wrapper = videoRef.current?.parentElement;
+    if (wrapper?.requestFullscreen) wrapper.requestFullscreen();
+    else if (wrapper?.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
   };
 
   const togglePlayPause = () => {
@@ -316,18 +310,6 @@ export default function VideoSubtitle() {
     }
   };
 
-  // Test audio function
-  const testAudio = () => {
-    if (allSubtitlesRef.current.length > 0) {
-      const firstSub = allSubtitlesRef.current[0];
-      console.log("Testing first audio:", firstSub);
-      playAudioForSubtitle(firstSub);
-    } else {
-      alert("No subtitles available yet");
-    }
-  };
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (eventSource) eventSource.close();
@@ -336,75 +318,279 @@ export default function VideoSubtitle() {
   }, [eventSource, stopAllAudio]);
 
   return (
-    <div className="video-subtitle-container">
-      <h1>Live Tamil Translation</h1>
-      
-      <div className="controls">
+    <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+        <h1 style={{ color: '#1a1a1a', marginBottom: '8px', fontSize: '32px' }}>Live Tamil Translation</h1>
+        <p style={{ color: '#666', fontSize: '16px' }}>Upload a video or download from YouTube to get live subtitles</p>
+      </div>
+
+      {/* YouTube Download Section */}
+      <div style={{ 
+        marginBottom: '20px', 
+        padding: '24px', 
+        backgroundColor: '#fff', 
+        borderRadius: '12px',
+        border: '2px solid #e0e0e0',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+      }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#333', fontSize: '18px', fontWeight: '600' }}>
+          🎬 Download from YouTube
+        </h3>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'stretch' }}>
+          <input
+            type="text"
+            placeholder="Paste YouTube link here (e.g., https://youtube.com/watch?v=...)"
+            value={youtubeLink}
+            onChange={(e) => setYoutubeLink(e.target.value)}
+            disabled={downloading}
+            style={{ 
+              flex: '1', 
+              padding: '12px 16px', 
+              borderRadius: '8px',
+              border: '2px solid #ddd',
+              fontSize: '15px',
+              outline: 'none',
+              transition: 'border-color 0.2s',
+              backgroundColor: downloading ? '#f5f5f5' : 'white'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#007bff'}
+            onBlur={(e) => e.target.style.borderColor = '#ddd'}
+          />
+          <button 
+            onClick={handleYoutubeDownload} 
+            disabled={!youtubeLink.trim() || downloading}
+            style={{ 
+              padding: '12px 28px', 
+              cursor: (!youtubeLink.trim() || downloading) ? 'not-allowed' : 'pointer',
+              backgroundColor: downloading ? '#95a5a6' : '#e74c3c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '15px',
+              fontWeight: '600',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s',
+              opacity: (!youtubeLink.trim() || downloading) ? 0.6 : 1
+            }}
+            onMouseOver={(e) => {
+              if (!downloading && youtubeLink.trim()) {
+                e.target.style.backgroundColor = '#c0392b';
+                e.target.style.transform = 'translateY(-1px)';
+              }
+            }}
+            onMouseOut={(e) => {
+              e.target.style.backgroundColor = downloading ? '#95a5a6' : '#e74c3c';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            {downloading ? "⏳ Downloading..." : "📥 Download"}
+          </button>
+        </div>
+      </div>
+
+      {/* Local Upload Section */}
+      <div style={{ 
+        marginBottom: '20px', 
+        padding: '24px', 
+        backgroundColor: '#fff', 
+        borderRadius: '12px',
+        border: '2px solid #e0e0e0',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+      }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#333', fontSize: '18px', fontWeight: '600' }}>
+          📁 Or Upload Local Video
+        </h3>
         <input 
           type="file" 
           accept="video/*" 
           onChange={handleFileChange} 
           disabled={processing}
+          style={{ 
+            display: 'block',
+            width: '100%',
+            padding: '12px',
+            border: '2px dashed #ddd',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            backgroundColor: processing ? '#f5f5f5' : 'white'
+          }}
         />
+        {fileName && (
+          <div style={{ 
+            marginTop: '12px', 
+            padding: '10px 14px',
+            backgroundColor: '#d4edda',
+            color: '#155724',
+            borderRadius: '6px',
+            fontSize: '14px',
+            border: '1px solid #c3e6cb'
+          }}>
+            ✅ Selected: <strong>{fileName}</strong>
+          </div>
+        )}
+      </div>
+
+      {/* Control Buttons */}
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
         <button 
           onClick={startProcessing} 
           disabled={!videoFile || processing}
+          style={{ 
+            flex: '1',
+            minWidth: '180px',
+            padding: '14px 24px', 
+            cursor: (!videoFile || processing) ? 'not-allowed' : 'pointer',
+            backgroundColor: (!videoFile || processing) ? '#95a5a6' : '#27ae60',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            transition: 'all 0.2s',
+            opacity: (!videoFile || processing) ? 0.6 : 1
+          }}
         >
-          {processing ? "Processing..." : "Start Live Translation"}
+          {processing ? "⏳ Processing..." : "🚀 Start Translation"}
         </button>
         <button 
           onClick={togglePlayPause} 
           disabled={!videoFile || !initialBufferReady}
+          style={{ 
+            padding: '14px 28px', 
+            cursor: (!videoFile || !initialBufferReady) ? 'not-allowed' : 'pointer',
+            backgroundColor: '#3498db',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            opacity: (!videoFile || !initialBufferReady) ? 0.6 : 1
+          }}
         >
-          {isPlaying ? "Pause" : "Play"}
+          {isPlaying ? "⏸️ Pause" : "▶️ Play"}
         </button>
         <button 
-          onClick={testAudio} 
-          disabled={allSubtitlesRef.current.length === 0}
+          onClick={goFullscreen} 
+          disabled={!videoFile}
+          style={{ 
+            padding: '14px 28px', 
+            cursor: !videoFile ? 'not-allowed' : 'pointer',
+            backgroundColor: '#34495e',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            opacity: !videoFile ? 0.6 : 1
+          }}
         >
-          Test Audio
-        </button>
-        <button onClick={goFullscreen} disabled={!videoFile}>
-          Fullscreen
+          ⛶ Fullscreen
         </button>
       </div>
 
-      <div id="subtitle" className="subtitle-display">
-        {liveSubtitles.length === 0 && "Subtitles will appear here after initial processing..."}
+      {/* Subtitle Display */}
+      <div 
+        id="subtitle" 
+        style={{
+          minHeight: '100px',
+          padding: '24px',
+          backgroundColor: '#000',
+          color: '#fff',
+          borderRadius: '12px',
+          marginBottom: '20px',
+          fontSize: '28px',
+          textAlign: 'center',
+          fontWeight: 'bold',
+          lineHeight: '1.5',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        }}
+      >
+        {liveSubtitles.length === 0 && "Subtitles will appear here..."}
       </div>
 
-      <div className="video-wrapper">
+      {/* Video Player */}
+      <div style={{ 
+        position: 'relative', 
+        backgroundColor: '#000', 
+        borderRadius: '12px', 
+        overflow: 'hidden',
+        marginBottom: '20px',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+      }}>
         <video 
           ref={videoRef} 
           controls 
-          className="video-player"
+          style={{ width: '100%', display: 'block', maxHeight: '600px' }}
         />
       </div>
 
-      <div className="status">{statusText}</div>
+      {/* Status */}
+      {statusText && (
+        <div style={{ 
+          marginBottom: '16px', 
+          padding: '16px 20px', 
+          backgroundColor: statusText.includes('failed') || statusText.includes('Error') ? '#fee' : '#e7f3ff',
+          color: statusText.includes('failed') || statusText.includes('Error') ? '#c00' : '#014361',
+          borderRadius: '8px', 
+          fontSize: '15px',
+          border: '1px solid ' + (statusText.includes('failed') || statusText.includes('Error') ? '#fcc' : '#b3d9ff'),
+          fontWeight: '500'
+        }}>
+          {statusText}
+        </div>
+      )}
+      
       {processing && !initialBufferReady && (
-        <div className="info">
-          <small>Please wait 5-6 seconds for initial audio processing...</small>
+        <div style={{ 
+          marginBottom: '16px', 
+          padding: '16px 20px', 
+          backgroundColor: '#fff9e6', 
+          color: '#856404',
+          borderRadius: '8px', 
+          fontSize: '14px',
+          border: '1px solid #ffe69c',
+          fontWeight: '500'
+        }}>
+          ⏳ Please wait 5-6 seconds for initial audio processing...
         </div>
       )}
       
       {/* Debug info */}
-      <div className="debug-info">
-        <small>Total subtitles: {allSubtitlesRef.current.length} | </small>
-        <small>Buffer ready: {initialBufferReady ? 'Yes' : 'No'} | </small>
-        <small>Video playing: {isPlaying ? 'Yes' : 'No'} | </small>
-        <small>Last played: {lastPlayedIndexRef.current} | </small>
-        <small>Current audio: {currentAudioRef.current ? 'Playing' : 'None'} | </small>
-        <small>Audio debug: {audioDebug}</small>
-      </div>
-      
-      {/* Show first few subtitle URLs for debugging */}
-      {allSubtitlesRef.current.length > 0 && (
-        <div className="debug-info" style={{marginTop: '10px', fontSize: '10px'}}>
-          <div>First subtitle URL: {allSubtitlesRef.current[0]?.tts_url}</div>
-          <div>Full URL: http://localhost:5000{allSubtitlesRef.current[0]?.tts_url}</div>
+      <details style={{ marginBottom: '16px' }}>
+        <summary style={{ 
+          padding: '12px 16px', 
+          backgroundColor: '#f8f9fa', 
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontSize: '14px',
+          fontWeight: '600',
+          color: '#495057'
+        }}>
+          🔧 Debug Information
+        </summary>
+        <div style={{ 
+          marginTop: '8px',
+          padding: '16px', 
+          backgroundColor: '#f8f9fa', 
+          borderRadius: '8px', 
+          fontSize: '13px', 
+          color: '#495057',
+          fontFamily: 'monospace',
+          lineHeight: '1.8'
+        }}>
+          <div>📊 Total subtitles: <strong>{allSubtitlesRef.current.length}</strong></div>
+          <div>🎬 Buffer ready: <strong>{initialBufferReady ? '✅ Yes' : '⏳ No'}</strong></div>
+          <div>▶️ Video playing: <strong>{isPlaying ? '✅ Yes' : '⏸️ No'}</strong></div>
+          <div>🎵 Last played index: <strong>{lastPlayedIndexRef.current}</strong></div>
+          <div>🔊 Current audio: <strong>{currentAudioRef.current ? '🔊 Playing' : '🔇 None'}</strong></div>
+          <div>📝 Audio status: <strong>{audioDebug || 'Idle'}</strong></div>
         </div>
-      )}
+      </details>
     </div>
   );
 }

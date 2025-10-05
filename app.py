@@ -6,6 +6,7 @@ import azure.cognitiveservices.speech as speechsdk
 import threading
 import time
 import queue
+import yt_dlp
 
 import env  # contains your AZURE keys
 
@@ -157,6 +158,43 @@ def process_audio_stream(session_id):
 @app.route("/uploads/<path:filename>")
 def serve_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+@app.route("/download_youtube", methods=["POST"])
+def download_youtube():
+    """Download video from YouTube URL"""
+    data = request.get_json()
+    url = data.get("url")
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    try:
+        video_id = str(uuid.uuid4())
+        file_template = os.path.join(UPLOAD_FOLDER, f"{video_id}.mp4")
+
+        ydl_opts = {
+            'format': 'best[ext=mp4]',
+            'outtmpl': file_template,
+            'noplaylist': True,
+            'quiet': True,
+            'merge_output_format': 'mp4',
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+        if not os.path.exists(file_template):
+            return jsonify({"error": "File not found after download"}), 500
+
+        filename = os.path.basename(file_template)
+        return jsonify({
+            "message": "Download completed",
+            "title": info.get('title', 'video'),
+            "file_url": f"/uploads/{filename}"
+        })
+
+    except Exception as e:
+        print("YouTube download error:", e)
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/start_live_processing", methods=["POST"])
 def start_live_processing():
